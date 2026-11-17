@@ -1,155 +1,128 @@
 # Ingestão e Busca Semântica com LangChain e Postgres
 
-## Objetivo
+Aplicação que lê um PDF, grava os trechos como embeddings no PostgreSQL com pgVector e responde perguntas no terminal usando somente o conteúdo ingerido.
 
-Você deve entregar um software capaz de:
+## O que o projeto faz
 
-- Ingestão: Ler um arquivo PDF e salvar suas informações em um banco de dados PostgreSQL com extensão pgVector.
-- Busca: Permitir que o usuário faça perguntas via linha de comando (CLI) e receba respostas baseadas apenas no conteúdo do PDF.
+1. **Ingestão** (`src/ingest.py`): carrega `document.pdf`, divide o texto em chunks de 1000 caracteres com overlap de 150, gera embeddings e salva os vetores no Postgres.
+2. **Busca** (`src/search.py`): vetoriza a pergunta, busca os 10 trechos mais próximos (`similarity_search_with_score`, `k=10`) e monta o prompt exigido pelo desafio.
+3. **Chat** (`src/chat.py`): loop no terminal. Se a resposta não estiver explícita no contexto recuperado, o modelo deve responder: `Não tenho informações necessárias para responder sua pergunta.`
 
-## Exemplo no CLI
+## Modelos
 
+O desafio não fixa modelos. Esta entrega usa, por padrão, os modelos leves da OpenAI que continuam disponíveis e cabem no volume do PDF:
+
+| Uso | Variável | Padrão |
+| --- | --- | --- |
+| Embeddings | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` |
+| Resposta | `OPENAI_LLM_MODEL` | `gpt-4o-mini` |
+
+Também é possível usar Gemini, com os nomes configuráveis:
+
+| Uso | Variável | Padrão |
+| --- | --- | --- |
+| Embeddings | `GOOGLE_EMBEDDING_MODEL` | `models/gemini-embedding-001` |
+| Resposta | `GOOGLE_LLM_MODEL` | `gemini-flash-lite-latest` |
+
+Defina `LLM_PROVIDER=openai` ou `LLM_PROVIDER=gemini`. Ingestão e chat precisam usar o mesmo provedor e o mesmo modelo de embeddings. A tabela de vetores é criada na primeira ingestão com a dimensão desse modelo. Se o modelo de embeddings mudar depois, apague o volume do banco e rode a ingestão de novo:
+
+```bash
+docker compose down -v
+docker compose up -d
+python src/ingest.py
+```
+
+Consulte a documentação oficial antes de trocar os nomes, porque modelos são descontinuados com frequência:
+
+- OpenAI: https://platform.openai.com/docs/models
+- Gemini: https://ai.google.dev/gemini-api/docs/models
+
+## Pré-requisitos
+
+- Python 3.11+
+- Docker e Docker Compose
+- Chave de API da OpenAI ou do Google AI Studio
+
+## Configuração
+
+```bash
+python -m venv venv
+```
+
+Linux ou macOS:
+
+```bash
+source venv/bin/activate
+```
+
+Windows (PowerShell):
+
+```powershell
+venv\Scripts\Activate.ps1
+```
+
+Instale as dependências e crie o arquivo de ambiente:
+
+```bash
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+No Linux ou macOS, use `cp .env.example .env`. Edite o `.env` e preencha a chave do provedor escolhido. A URL do banco já aponta para o Postgres do `docker-compose.yml`:
+
+```text
+postgresql+psycopg://postgres:postgres@localhost:5432/rag
+```
+
+## Execução
+
+Suba o banco:
+
+```bash
+docker compose up -d
+```
+
+Ingerir o PDF:
+
+```bash
+python src/ingest.py
+```
+
+Abrir o chat:
+
+```bash
+python src/chat.py
+```
+
+Exemplo:
+
+```text
 Faça sua pergunta:
 
-```
 PERGUNTA: Qual o faturamento da Empresa SuperTechIABrazil?
 RESPOSTA: O faturamento foi de 10 milhões de reais.
+```
 
----
+Perguntas que não estão no PDF:
 
-Perguntas fora do contexto:
-
+```text
 PERGUNTA: Quantos clientes temos em 2024?
 RESPOSTA: Não tenho informações necessárias para responder sua pergunta.
 ```
 
-## Tecnologias obrigatórias
+Digite `sair` para encerrar o chat. Rodar a ingestão de novo apaga a collection anterior e grava os chunks outra vez, para não duplicar vetores.
 
-- Linguagem: Python
-- Framework: LangChain
-- Banco de dados: PostgreSQL + pgVector
-- Execução do banco de dados: Docker & Docker Compose (docker-compose fornecido no repositório de exemplo)
+## Estrutura
 
-## Pacotes recomendados
-
-- Split: `from langchain_text_splitters import RecursiveCharacterTextSplitter`
-- Embeddings (OpenAI): `from langchain_openai import OpenAIEmbeddings`
-- Embeddings (Gemini): `from langchain_google_genai import GoogleGenerativeAIEmbeddings`
-- PDF: `from langchain_community.document_loaders import PyPDFLoader`
-- Ingestão: `from langchain_postgres import PGVector`
-- Busca: `similarity_search_with_score(query, k=10)`
-
-## OpenAI
-
-- Crie uma API Key da OpenAI.
-- Você vai precisar de um modelo de embeddings e de um modelo de LLM para responder. Consulte a documentação oficial da OpenAI para ver os modelos disponíveis.
-
-## Gemini
-
-- Crie uma API Key da Google.
-- Você vai precisar de um modelo de embeddings e de um modelo de LLM para responder. Consulte a documentação oficial do Google para ver os modelos disponíveis.
-
-Os limites de requisições gratuitas dos modelos podem mudar com frequência. Para informações atualizadas, consulte a documentação oficial do Google.
-
-## Escolha dos modelos
-
-Este desafio não fixa modelos. Nomes e versões mudam com frequência e alguns são descontinuados, então faz parte do desafio consultar a documentação oficial do provedor que você escolher, ver quais modelos estão disponíveis no momento e selecionar os que atendem ao objetivo. Para o volume deste desafio, os modelos mais leves e baratos de cada provedor são suficientes.
-
-Atenção: modelos de embedding diferentes geram vetores com dimensões diferentes. A tabela de vetores é criada na primeira ingestão, já com a dimensão do modelo que você escolheu. Se você trocar de modelo de embeddings depois disso, a ingestão passa a falhar por incompatibilidade de dimensão. Nesse caso é responsabilidade sua apagar a collection existente (ou o volume do banco) e refazer a ingestão do zero com o novo modelo.
-
-## Requisitos
-
-### 1. Ingestão do PDF
-
-- O PDF deve ser dividido em chunks de 1000 caracteres com overlap de 150.
-- Cada chunk deve ser convertido em embedding.
-- Os vetores devem ser armazenados no banco de dados PostgreSQL com pgVector.
-
-### 2. Consulta via CLI
-
-Criar um script Python para simular um chat no terminal.
-
-Passos ao receber uma pergunta:
-
-- Vetorizar a pergunta.
-- Buscar os 10 resultados mais relevantes (k=10) no banco vetorial.
-- Montar o prompt e chamar a LLM.
-- Retornar a resposta ao usuário.
-
-Prompt a ser utilizado:
-
-```
-CONTEXTO:
-{resultados concatenados do banco de dados}
-
-REGRAS:
-- Responda somente com base no CONTEXTO.
-- Se a informação não estiver explicitamente no CONTEXTO, responda:
-  "Não tenho informações necessárias para responder sua pergunta."
-- Nunca invente ou use conhecimento externo.
-- Nunca produza opiniões ou interpretações além do que está escrito.
-
-EXEMPLOS DE PERGUNTAS FORA DO CONTEXTO:
-Pergunta: "Qual é a capital da França?"
-Resposta: "Não tenho informações necessárias para responder sua pergunta."
-
-Pergunta: "Quantos clientes temos em 2024?"
-Resposta: "Não tenho informações necessárias para responder sua pergunta."
-
-Pergunta: "Você acha isso bom ou ruim?"
-Resposta: "Não tenho informações necessárias para responder sua pergunta."
-
-PERGUNTA DO USUÁRIO:
-{pergunta do usuário}
-
-RESPONDA A "PERGUNTA DO USUÁRIO"
-```
-
-## Estrutura obrigatória do projeto
-
-Faça um fork do repositório para utilizar a estrutura abaixo: https://github.com/devfullcycle/mba-ia-desafio-ingestao-busca
-
-```
+```text
 ├── docker-compose.yml
-├── requirements.txt      # Dependências
-├── .env.example          # Template das variáveis de ambiente
+├── requirements.txt
+├── .env.example
 ├── src/
-│   ├── ingest.py         # Script de ingestão do PDF
-│   ├── search.py         # Script de busca
-│   ├── chat.py           # CLI para interação com usuário
-├── document.pdf          # PDF para ingestão
-└── README.md             # Instruções de execução
+│   ├── settings.py       # Provedor, conexão e factories
+│   ├── ingest.py         # Ingestão do PDF
+│   ├── search.py         # Busca vetorial e prompt
+│   ├── chat.py           # CLI
+├── document.pdf
+└── README.md
 ```
-
-## VirtualEnv para Python
-
-Crie e ative um ambiente virtual antes de instalar dependências:
-
-```
-python3 -m venv venv
-source venv/bin/activate
-```
-
-## Ordem de execução
-
-1. Subir o banco de dados:
-
-```
-docker compose up -d
-```
-
-2. Executar ingestão do PDF:
-
-```
-python src/ingest.py
-```
-
-3. Rodar o chat:
-
-```
-python src/chat.py
-```
-
-## Entregável
-
-Repositório público no GitHub contendo todo o código-fonte e README com instruções claras de execução do projeto.
